@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpInterceptor, HttpRequest, HttpHandler, HttpEvent, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError, BehaviorSubject } from 'rxjs';
 import { AuthService } from './auth/shared/auth.service';
-import { catchError, switchMap } from 'rxjs/operators';
+import { catchError, switchMap, take, filter } from 'rxjs/operators';
 import { LoginResponse } from './auth/login/login-response.payload';
 
 @Injectable({
@@ -18,6 +18,11 @@ export class TokenInterceptor implements HttpInterceptor {
         Observable<HttpEvent<any>> {
 
         const jwtToken = this.authService.getJwtToken();
+        if (req.url.indexOf('refresh') !== -1 || req.url.indexOf('login') !== -1 || (req.url.indexOf('/api/posts/') !== -1 && req.method.indexOf('GET') !== -1)
+            || (req.url.indexOf('/api/subreddit') !== -1 && req.method.indexOf('GET') !== -1)) {
+            return next.handle(req);
+        }
+
         if (this.authService.getJwtToken()) {
             this.addToken(req, jwtToken);
         }
@@ -32,7 +37,6 @@ export class TokenInterceptor implements HttpInterceptor {
         ) as Observable<HttpEvent<any>>;
     }
 
-
     private handleAuthErrors(req: HttpRequest<any>, next: HttpHandler) {
         if (!this.isTokenRefreshing) {
             this.isTokenRefreshing = true;
@@ -45,6 +49,16 @@ export class TokenInterceptor implements HttpInterceptor {
                     return next.handle(this.addToken(req, refreshTokenResponse.authenticationToken));
                 })
             )
+        }
+        else {
+            return this.refreshTokenSubject.pipe(
+                filter(result => result !== null),
+                take(1),
+                switchMap((res) => {
+                    return next.handle(this.addToken(req,
+                        this.authService.getJwtToken()))
+                })
+            );
         }
     }
     private addToken(req: HttpRequest<any>, jwtToken: any) {
